@@ -267,12 +267,7 @@ export default async function DashboardPage() {
         )}
 
         {recent?.map((item, index) => {
-          const colors = {
-            brown:  item.brown_pct  ?? 0,
-            orange: item.yellow_pct ?? 0,
-            green:  item.green_pct  ?? 0,
-            red:    item.red_pct    ?? 0,
-          }
+          const hasWarning = item.red_pct && item.red_pct > 20 || item.severity && (item.severity === 'warning' || item.severity === 'critical')
           return (
             <Link
               key={item.id}
@@ -294,12 +289,21 @@ export default async function DashboardPage() {
                 )}
               </div>
 
-              <div className="flex flex-col gap-0.5">
+              <div className="flex-1 flex flex-col gap-1">
                 <span className="text-xs font-semibold" style={{ color: '#404040', letterSpacing: '-0.02em' }}>
                   {formatTime(item.timestamp)}
                 </span>
-                <ConsistencyTag kind={item.kind} />
-                <ColorDots colors={colors} />
+                <div className="flex items-center gap-2">
+                  <ConsistencyTag kind={item.kind} />
+                  {hasWarning && (
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                      style={{ backgroundColor: '#FFE5E5', color: '#B52E2E', letterSpacing: '-0.02em' }}
+                    >
+                      ⚠ WARNING
+                    </span>
+                  )}
+                </div>
               </div>
             </Link>
           )
