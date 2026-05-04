@@ -1,6 +1,5 @@
 import { unstable_noStore as noStore } from 'next/cache'
 import { createClient } from '@/lib/supabase-server'
-import { CleanNowButton } from '@/components/CleanNowButton'
 import { MotorActionButtons } from '@/components/MotorActionButtons'
 
 type State = 'MONITORING' | 'OCCUPIED' | 'CHECKING' | 'DIRTY' | 'COOLDOWN' | 'OFFLINE' | string
@@ -179,11 +178,10 @@ export default async function MotorPage() {
         )}
       </section>
 
-      {/* Manual Control */}
+      {/* Manual Control (Clean Now button removed) */}
       {userEmail && (
         <section className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Manual Control</p>
-          <CleanNowButton userEmail={userEmail} />
           <MotorActionButtons />
           <div className="flex items-center gap-2 pt-1">
             <div className="w-2 h-2 rounded-full bg-gray-300 flex-shrink-0" />

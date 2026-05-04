@@ -1,7 +1,6 @@
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-server'
 import { ColorWheelChart } from '@/components/ColorWheelChart'
-import { CleanNowButton } from '@/components/CleanNowButton'
 import { ConsistencyBadge } from '@/components/ConsistencyBadge'
 import { SeverityBadge } from '@/components/SeverityBadge'
 import type { Detection } from '@/lib/supabase'
@@ -197,19 +196,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* Action buttons row — Clean Now */}
-      {userEmail && (
-        <section
-          className="mx-0 opacity-0 animate-fadeInUp animation-delay-200 space-y-3"
-        >
-          <div
-            className="bg-white"
-            style={{ borderRadius: 20, boxShadow: '0 4px 16px rgba(0,0,0,0.06)', padding: '16px' }}
-          >
-            <CleanNowButton userEmail={userEmail} />
-          </div>
-        </section>
-      )}
+      {/* Action buttons row removed (Clean Now) */}
 
       {/* Recent Detection heading — fadeInUp, delay 300 */}
       <h2
