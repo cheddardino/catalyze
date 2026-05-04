@@ -233,7 +233,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* Action buttons row — Clean Now + Watch Live */}
+      {/* Action buttons row — Clean Now */}
       {userEmail && (
         <section
           className="mx-0 opacity-0 animate-fadeInUp animation-delay-200 space-y-3"
@@ -244,26 +244,6 @@ export default async function DashboardPage() {
           >
             <CleanNowButton userEmail={userEmail} />
           </div>
-          <Link
-            href="/live"
-            className="flex items-center justify-between bg-white px-4 py-3.5 rounded-2xl hover:bg-gray-50 transition-colors"
-            style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.06)' }}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0" style={{ background: 'linear-gradient(135deg,#1a1a2e,#16213e)' }}>
-                <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-white">
-                  <path d="M3.25 4A2.25 2.25 0 001 6.25v7.5A2.25 2.25 0 003.25 16h7.5A2.25 2.25 0 0013 13.75v-7.5A2.25 2.25 0 0010.75 4h-7.5zM19 4.75a.75.75 0 00-1.28-.53l-3 3a.75.75 0 00-.22.53v4.5c0 .199.079.39.22.53l3 3a.75.75 0 001.28-.53V4.75z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-sm font-semibold" style={{ color: '#404040' }}>Watch Live</p>
-                <p className="text-xs text-gray-400">Real-time camera feed from the device</p>
-              </div>
-            </div>
-            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-gray-300 flex-shrink-0">
-              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-            </svg>
-          </Link>
         </section>
       )}
 

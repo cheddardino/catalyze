@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 
 import db
+import json
 
 load_dotenv()
 
@@ -34,7 +35,12 @@ def _get_client() -> Optional[Client]:
         if _client is not None:
             return _client
         url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_KEY")
+        # Prefer service role key for server-side sync to bypass RLS; fall back to SUPABASE_KEY
+        key = (
+            os.environ.get("SUPABASE_SERVICE_KEY")
+            or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+            or os.environ.get("SUPABASE_KEY")
+        )
         if not url or not key:
             print("[sync] SUPABASE_URL / SUPABASE_KEY not set — sync disabled", flush=True)
             return None
@@ -49,6 +55,7 @@ def _upload_image(client: Client, local_path: str, row_id: int, suffix: str) -> 
     """Upload one image file to Supabase Storage, return its public URL."""
     p = Path(local_path)
     if not p.exists():
+        print(f"[sync] {suffix} image missing: {local_path}", flush=True)
         return None
     storage_key = f"{row_id}/{p.stem}_{suffix}{p.suffix}"
     try:
@@ -59,9 +66,10 @@ def _upload_image(client: Client, local_path: str, row_id: int, suffix: str) -> 
                 file_options={"content-type": "image/jpeg", "upsert": "true"},
             )
         url = client.storage.from_(STORAGE_BUCKET).get_public_url(storage_key)
+        print(f"[sync] {suffix} uploaded: {url}", flush=True)
         return url
     except Exception as e:
-        print(f"[sync] image upload failed ({storage_key}): {e}", flush=True)
+        print(f"[sync] image upload failed ({storage_key}, {suffix}): {e}", flush=True)
         return None
 
 
@@ -75,16 +83,20 @@ def _sync_batch(client: Client, captures_dir: Path) -> int:
     for row in rows:
         rid = row["id"]
         try:
+            print(f"[sync] row {rid}: image_cat={row.get('image_cat')}, has pending_cat={bool(row.get('image_cat'))}", flush=True)
             # full image stays local only — auto-deleted after 7 days by maintenance.py
             full_url  = None
             crop_url  = _upload_image(client, str(captures_dir / row["image_crop"]),  rid, "crop")  if row.get("image_crop")    else None
             over_url  = _upload_image(client, str(captures_dir / row["image_overlay"]),rid,"overlay")if row.get("image_overlay") else None
+            cat_url   = _upload_image(client, str(captures_dir / row["image_cat"]),   rid, "cat")    if row.get("image_cat")     else None
 
             payload = {
                 "local_id":     rid,
                 "timestamp":    row["timestamp"],
                 "kind":         row.get("kind", "poop"),
-                "bbox_json":    row.get("bbox_json"),
+                # row returned by db.list_unsynced contains `bbox` (parsed JSON);
+                # convert it to a JSON string field expected by Postgres.
+                "bbox_json":    json.dumps(row.get("bbox")) if row.get("bbox") is not None else None,
                 "red_pct":      row.get("red_pct"),
                 "yellow_pct":   row.get("yellow_pct"),
                 "green_pct":    row.get("green_pct"),
@@ -95,10 +107,11 @@ def _sync_batch(client: Client, captures_dir: Path) -> int:
                 "image_full":   full_url,
                 "image_crop":   crop_url,
                 "image_overlay":over_url,
+                "image_cat":    cat_url,
             }
             resp = client.table("detections").insert(payload).execute()
             supabase_id = resp.data[0]["id"] if resp.data else None
-            db.mark_synced(rid, supabase_id, full_url, crop_url, over_url)
+            db.mark_synced(rid, supabase_id, full_url, crop_url, over_url, cat_url)
             synced += 1
         except Exception as e:
             print(f"[sync] row {rid} failed: {e}", flush=True)

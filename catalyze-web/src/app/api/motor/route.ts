@@ -46,6 +46,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'unsupported action' }, { status: 400 })
   }
 
+  // Only admins can trigger 'clean' action
+  if (body.action === 'clean') {
+    const { data: userRecord } = await supabase
+      .from('users')
+      .select('is_admin')
+      .eq('email', user.email)
+      .single()
+
+    if (!userRecord?.is_admin) {
+      return NextResponse.json(
+        { error: 'admin access required for clean action' },
+        { status: 403 }
+      )
+    }
+  }
+
   const { data, error } = await supabase
     .from('commands')
     .insert({

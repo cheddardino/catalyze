@@ -12,7 +12,6 @@ export function BottomNav() {
 
   const isHome     = path === '/'
   const isActivity = path.startsWith('/activity') || path.startsWith('/history')
-  const isLive     = path.startsWith('/live')
   const isMotor    = path.startsWith('/motor')
   const isProfile  = path.startsWith('/profile') || path.startsWith('/settings')
 
@@ -22,8 +21,8 @@ export function BottomNav() {
       style={{ background: '#90D9FB', boxShadow: '0 -2px 12px rgba(0,0,0,0.04)' }}
     >
       {/*
-        5-slot layout: [Activity] [Live] [HOME-spacer] [Motor] [Profile]
-        justify-around → items at 10% 30% 50% 70% 90%
+        4-slot layout: [Activity] [HOME-spacer] [Motor] [Profile]
+        justify-around → items at 20% 50% 80%
         HOME is absolutely centered at 50%, sitting over the spacer slot.
       */}
       <div
@@ -46,20 +45,6 @@ export function BottomNav() {
           </svg>
           <span className="text-[10px] font-semibold leading-none" style={{ color: '#404040' }}>
             Activity
-          </span>
-        </Link>
-
-        {/* Live */}
-        <Link
-          href="/live"
-          className="flex flex-col items-center justify-end gap-0.5 transition-opacity pb-2"
-          style={{ width: 56, opacity: isLive ? 1 : 0.55 }}
-        >
-          <svg viewBox="0 0 24 24" fill={isLive ? '#E28331' : '#404040'} className="w-6 h-6">
-            <path d="M4.5 4.5a3 3 0 00-3 3v9a3 3 0 003 3h8.25a3 3 0 003-3v-9a3 3 0 00-3-3H4.5zM19.94 18.75l-2.69-2.69V7.94l2.69-2.69c.944-.945 2.56-.276 2.56 1.06v11.38c0 1.336-1.616 2.005-2.56 1.06z" />
-          </svg>
-          <span className="text-[10px] font-semibold leading-none" style={{ color: '#404040' }}>
-            Live
           </span>
         </Link>
 

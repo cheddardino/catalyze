@@ -40,10 +40,17 @@ _GPIO_LOCK = threading.Lock()
 def _ensure_gpio_ready(simulate=False):
     if simulate or not IS_RPI:
         return
+    # setmode may already be called by gpio_controller; only call if not set
     if GPIO.getmode() is None:
         GPIO.setmode(GPIO.BCM)
+    # Always ensure our pins are set up as outputs (safe to call multiple times)
+    try:
         GPIO.setup(DIR_PIN, GPIO.OUT)
         GPIO.setup(PUL_PIN, GPIO.OUT)
+    except RuntimeError:
+        # Pins may already be set up; that's fine
+        pass
+    # Reset to LOW state
     GPIO.output(DIR_PIN, GPIO.LOW)
     GPIO.output(PUL_PIN, GPIO.LOW)
 
@@ -60,14 +67,11 @@ def cleanup_gpio(simulate=False):
         print("[SIM] cleanup GPIO")
         return
     try:
+        # Reset motor pins to LOW (do NOT call GPIO.cleanup() as it affects all pins)
         GPIO.output(PUL_PIN, GPIO.LOW)
         GPIO.output(DIR_PIN, GPIO.LOW)
     except RuntimeError:
         # GPIO mode may already be reset by another caller.
-        pass
-    try:
-        GPIO.cleanup()
-    except RuntimeError:
         pass
 
 
@@ -106,7 +110,7 @@ def rotate(direction: int, steps: int = None, duration: float = None, delay: flo
             # each full cycle uses 2 * delay seconds
             steps = max(1, int(duration / (delay * 2)))
 
-    print(f"Rotate: direction={'CCW' if direction==1 else 'CW'}, steps={steps}, delay={delay}")
+    print(f"Rotate: direction={'CW' if direction==1 else 'CCW'}, steps={steps}, delay={delay}")
     with _GPIO_LOCK:
         init_gpio(simulate=simulate)
         try:

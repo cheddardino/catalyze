@@ -31,7 +31,12 @@ def _get_client() -> Optional[Client]:
         if _client is not None:
             return _client
         url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_KEY")
+        # Prefer service key in backend context; fall back to anon key only if needed.
+        key = (
+            os.environ.get("SUPABASE_SERVICE_KEY")
+            or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+            or os.environ.get("SUPABASE_KEY")
+        )
         if not url or not key:
             print("[live-push] SUPABASE_URL / SUPABASE_KEY not set — live push disabled", flush=True)
             return None

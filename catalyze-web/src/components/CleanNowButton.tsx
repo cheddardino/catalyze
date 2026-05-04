@@ -23,6 +23,14 @@ export function CleanNowButton({ userEmail }: { userEmail: string }) {
 
     const payload = await res.json().catch(() => null)
 
+    if (res.status === 403) {
+      console.error('[clean] admin access required')
+      setBtnState('error')
+      alert('⚠ Only administrators can trigger the clean action.')
+      setTimeout(() => setBtnState('idle'), 4_000)
+      return
+    }
+
     if (!res.ok || !payload?.id) {
       console.error('[clean] enqueue failed', payload)
       setBtnState('error')

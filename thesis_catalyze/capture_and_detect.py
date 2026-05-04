@@ -29,7 +29,7 @@ POOP_WEIGHTS = str(_HERE / "best.pt")
 CAT_CLASS    = "cat"
 STOOL_CLASSES = {"Soft", "Hard", "Watery"}
 CAT_CONF     = 0.25   # low — top-view cats score lower in COCO-trained model
-POOP_CONF    = 0.40
+POOP_CONF    = 0.20
 CAT_IMGSZ    = 320
 POOP_IMGSZ   = 640
 CAPTURE_DIR  = _HERE.parent / "captures"
@@ -39,6 +39,13 @@ POOP_MODEL_VERSION = f"stool:{Path(POOP_WEIGHTS).name}"
 POLL_INTERVAL          = 4     # seconds between inference runs
 POST_CLEAN_COOLDOWN    = 30
 FALLBACK_POOP_INTERVAL = 120   # fallback poop scan when no cat trigger
+CAT_STAY_CAPTURE_S     = 1.5   # capture cat image after this much continuous presence
+FULL_CYCLE_SECONDS    = 9.0
+FULL_CYCLE_PAUSE_S    = 2.0
+FULL_CYCLE_DELAY      = gallon_rotate.STEP_DELAY * 3.0
+# Small adjustments for capture-triggered full cycle
+FULL_CYCLE_CW_EXTRA_S = 1.0   # add 1s to the CW leg when triggered from capture
+FULL_CYCLE_CCW2_S     = 1.0   # final short CCW leg (1s)
 
 # Motor cleaning cycle defaults — delegated to motor.py
 MOTOR_DIRECTION = motor.CLEAN_DIRECTION
@@ -87,12 +94,13 @@ def _crop_with_padding(frame, bbox, padding):
     return frame[y1:y2, x1:x2], [x1, y1, x2, y2]
 
 
-def save_detection(frame, timestamp, detections):
+def save_detection(frame, timestamp, detections, image_cat=None):
     """Save full + cropped + overlay images, run color analysis, write db row.
 
     Returns the inserted db row id (or None on failure to crop).
     """
     stamp = timestamp.strftime("%Y%m%d_%H%M%S")
+    print(f"[save_detection] image_cat={image_cat}", flush=True)
     full_path    = CAPTURE_DIR / f"capture_{stamp}_full.jpg"
     crop_path    = CAPTURE_DIR / f"capture_{stamp}_crop.jpg"
     overlay_path = CAPTURE_DIR / f"capture_{stamp}_overlay.jpg"
@@ -130,6 +138,7 @@ def save_detection(frame, timestamp, detections):
         "image_full": full_path.name,
         "image_crop": crop_name,
         "image_overlay": overlay_name,
+        "image_cat": image_cat,
         "detections": detections,
         "crop_bbox":  crop_bbox,
         "colors":     color_pcts,
@@ -143,6 +152,7 @@ def save_detection(frame, timestamp, detections):
         image_full=full_path.name,
         image_crop=crop_name,
         image_overlay=overlay_name,
+        image_cat=image_cat,
         bbox=crop_bbox,
         color_pcts=color_pcts,
         remark=remark,
@@ -156,8 +166,50 @@ def save_detection(frame, timestamp, detections):
 
 
 def trigger_motor(dry_run: bool):
-    """Run cleaning cycle in a background thread so detection isn't blocked."""
-    motor.trigger_cleaning_cycle_async(simulate=dry_run)
+    """Run the dashboard-style full cleaning cycle in a background thread."""
+    # New pattern for capture-triggered clean:
+    # CCW (FULL_CYCLE_SECONDS) -> pause (FULL_CYCLE_PAUSE_S) ->
+    # CW (FULL_CYCLE_SECONDS + FULL_CYCLE_CW_EXTRA_S) -> CCW2 (SHORT)
+    def _run():
+        try:
+            # First CCW (original duration)
+            gallon_rotate.rotate(
+                direction=0,
+                duration=FULL_CYCLE_SECONDS,
+                delay=FULL_CYCLE_DELAY,
+                simulate=dry_run,
+            )
+            # Pause
+            time.sleep(FULL_CYCLE_PAUSE_S)
+            # CW leg (add 1s)
+            gallon_rotate.rotate(
+                direction=1,
+                duration=FULL_CYCLE_SECONDS + FULL_CYCLE_CW_EXTRA_S,
+                delay=FULL_CYCLE_DELAY,
+                simulate=dry_run,
+            )
+            # Short CCW2 final leg (1s)
+            gallon_rotate.rotate(
+                direction=0,
+                duration=FULL_CYCLE_CCW2_S,
+                delay=FULL_CYCLE_DELAY,
+                simulate=dry_run,
+            )
+            print(f"[motor] full cleaning cycle done (simulate={dry_run})", flush=True)
+        except Exception as exc:
+            print(f"[motor] full cleaning cycle FAILED: {exc}", flush=True)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
+def capture_cat_image(frame, timestamp):
+    """Persist one cat image that can be paired with the next poop event."""
+    stamp = timestamp.strftime("%Y%m%d_%H%M%S")
+    cat_path = CAPTURE_DIR / f"capture_{stamp}_cat.jpg"
+    cv2.imwrite(str(cat_path), frame)
+    name = cat_path.name
+    print(f"[capture] cat image saved: {name}", flush=True)
+    return name
 
 
 def inference_loop(cat_model, poop_model, shared, lock, stop_event, dry_run):
@@ -188,6 +240,7 @@ def inference_loop(cat_model, poop_model, shared, lock, stop_event, dry_run):
                 x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
                 detections.append({"class": cls_name, "confidence": round(conf, 4), "bbox": [x1, y1, x2, y2]})
             cat_detected = bool(detections)
+            now_s = time.time()
 
             with lock:
                 last_poop_scan = shared["last_poop_scan"]
@@ -203,20 +256,36 @@ def inference_loop(cat_model, poop_model, shared, lock, stop_event, dry_run):
                         if cat_detected:
                             shared["state"] = "OCCUPIED"
                             shared["detections"] = detections
+                            shared["cat_present_since"] = now_s
+                            shared["cat_image_captured"] = False
                             print(f"[{t}] Cat entered — monitoring", flush=True)
                     elif state == "OCCUPIED":
                         if cat_detected:
                             shared["detections"] = detections
+                            if shared.get("cat_present_since") is None:
+                                shared["cat_present_since"] = now_s
+                            should_capture_cat = (
+                                not shared.get("cat_image_captured", False)
+                                and (now_s - shared["cat_present_since"]) >= CAT_STAY_CAPTURE_S
+                            )
+                            if should_capture_cat:
+                                cat_img_name = capture_cat_image(frame, timestamp)
+                                shared["pending_cat_image"] = cat_img_name
+                                shared["cat_image_captured"] = True
+                                print(f"[{t}] Cat image captured: {cat_img_name}", flush=True)
                             print(f"[{t}] Cat still in box", flush=True)
                         else:
                             shared["detections"] = []
                             shared["state"] = "CHECKING"
+                            shared["cat_present_since"] = None
                             print(f"[{t}] Cat left — scanning for poop", flush=True)
 
         elif state == "CHECKING":
-            results = poop_model.predict(frame, imgsz=POOP_IMGSZ, conf=POOP_CONF, verbose=False)[0]
+            # Primary detection: run on full frame first with imgsz=640, conf=0.2
+            results_full = poop_model.predict(frame, imgsz=POOP_IMGSZ, conf=POOP_CONF, verbose=False)[0]
             detections = []
-            for box in results.boxes:
+            # Collect detections from full frame
+            for box in results_full.boxes:
                 cls_name = poop_model.names[int(box.cls[0])]
                 if cls_name not in STOOL_CLASSES:
                     continue
@@ -224,17 +293,70 @@ def inference_loop(cat_model, poop_model, shared, lock, stop_event, dry_run):
                 x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
                 detections.append({"class": cls_name, "confidence": round(conf, 4), "bbox": [x1, y1, x2, y2]})
 
+            # Conditional fallback: only if full-frame produced no detections
+            if not detections:
+                h, w = frame.shape[:2]
+
+                # A) Center crop covering ~55% of frame (between 50-60%)
+                frac = 0.55
+                crop_w = int(w * frac)
+                crop_h = int(h * frac)
+                cx = w // 2
+                cy = h // 2
+                cx1 = max(0, cx - crop_w // 2)
+                cy1 = max(0, cy - crop_h // 2)
+                cx2 = min(w, cx1 + crop_w)
+                cy2 = min(h, cy1 + crop_h)
+                center_crop = frame[cy1:cy2, cx1:cx2]
+
+                # Run detection on center crop (lightweight single call)
+                results_center = poop_model.predict(center_crop, imgsz=POOP_IMGSZ, conf=POOP_CONF, verbose=False)[0]
+                for box in results_center.boxes:
+                    cls_name = poop_model.names[int(box.cls[0])]
+                    if cls_name not in STOOL_CLASSES:
+                        continue
+                    conf = float(box.conf[0])
+                    bx1, by1, bx2, by2 = map(int, box.xyxy[0].tolist())
+                    # Convert crop coords back to full-frame coordinates
+                    fx1, fy1, fx2, fy2 = bx1 + cx1, by1 + cy1, bx2 + cx1, by2 + cy1
+                    detections.append({"class": cls_name, "confidence": round(conf, 4), "bbox": [fx1, fy1, fx2, fy2]})
+
+                # B) Secondary crop: fixed top-left region (~50% area)
+                if not detections:
+                    sx1, sy1 = 0, 0
+                    sx2, sy2 = int(w * 0.5), int(h * 0.5)
+                    sec_crop = frame[sy1:sy2, sx1:sx2]
+                    results_sec = poop_model.predict(sec_crop, imgsz=POOP_IMGSZ, conf=POOP_CONF, verbose=False)[0]
+                    for box in results_sec.boxes:
+                        cls_name = poop_model.names[int(box.cls[0])]
+                        if cls_name not in STOOL_CLASSES:
+                            continue
+                        conf = float(box.conf[0])
+                        bx1, by1, bx2, by2 = map(int, box.xyxy[0].tolist())
+                        # Convert secondary crop coords back to full-frame coordinates
+                        fx1, fy1, fx2, fy2 = bx1 + sx1, by1 + sy1, bx2 + sx1, by2 + sy1
+                        detections.append({"class": cls_name, "confidence": round(conf, 4), "bbox": [fx1, fy1, fx2, fy2]})
+
+            # Persist results and update state (same as original behavior)
             with lock:
                 shared["last_poop_scan"] = time.time()
+                paired_cat_image = shared.get("pending_cat_image")
+                print(f"[{t}] CHECKING done. paired_cat_image={paired_cat_image}, detections={len(detections)}", flush=True)
                 if detections:
-                    save_detection(frame, timestamp, detections)
+                    # Save detection using original full-frame coordinates
+                    print(f"[{t}] Saving detection with image_cat={paired_cat_image}", flush=True)
+                    save_detection(frame, timestamp, detections, image_cat=paired_cat_image)
                     shared["state"] = "DIRTY"
                     shared["detections"] = detections
+                    shared["pending_cat_image"] = None
+                    shared["cat_image_captured"] = False
                     print(f"[{t}] Poop detected — firing motor", flush=True)
                     trigger_motor(dry_run=dry_run)
                 else:
                     shared["state"] = "MONITORING"
                     shared["detections"] = []
+                    shared["pending_cat_image"] = None
+                    shared["cat_image_captured"] = False
                     print(f"[{t}] No poop — back to idle", flush=True)
 
         elif state == "DIRTY":
@@ -309,6 +431,9 @@ def main():
         "detections":       [],
         "clean_since":      None,
         "last_poop_scan":   0.0,
+        "cat_present_since":None,
+        "cat_image_captured":False,
+        "pending_cat_image":None,
     }
     stop_event = threading.Event()
 

@@ -48,6 +48,7 @@ def insert_detection(
     image_full: str,
     image_crop: Optional[str],
     image_overlay: Optional[str],
+    image_cat: Optional[str],
     bbox: Any,
     color_pcts: Dict[str, float],
     remark: str,
@@ -58,16 +59,17 @@ def insert_detection(
     with _connect() as conn:
         cur = conn.execute(
             """INSERT INTO detections
-               (timestamp, kind, image_full, image_crop, image_overlay,
+               (timestamp, kind, image_full, image_crop, image_overlay, image_cat,
                 bbox_json, red_pct, yellow_pct, green_pct, brown_pct,
                 remark, severity, model_version)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 timestamp,
                 kind,
                 image_full,
                 image_crop,
                 image_overlay,
+                image_cat,
                 json.dumps(bbox) if bbox is not None else None,
                 color_pcts.get("red"),
                 color_pcts.get("yellow"),
@@ -170,14 +172,15 @@ def mark_synced(
     img_full_url: Optional[str],
     img_crop_url: Optional[str],
     img_overlay_url: Optional[str],
+    img_cat_url: Optional[str],
 ) -> None:
     with _connect() as conn:
         conn.execute(
             """UPDATE detections SET
                 synced = 1, supabase_id = ?,
-                img_full_url = ?, img_crop_url = ?, img_overlay_url = ?
+                img_full_url = ?, img_crop_url = ?, img_overlay_url = ?, img_cat_url = ?
                WHERE id = ?""",
-            (supabase_id, img_full_url, img_crop_url, img_overlay_url, local_id),
+            (supabase_id, img_full_url, img_crop_url, img_overlay_url, img_cat_url, local_id),
         )
 
 

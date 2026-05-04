@@ -57,6 +57,12 @@ MIGRATIONS: List[str] = [
     ALTER TABLE detections ADD COLUMN img_overlay_url TEXT;
     CREATE INDEX IF NOT EXISTS idx_detections_synced ON detections(synced, id);
     """,
+
+    # v4 — keep cat image path and synced cat image URL paired with poop rows.
+    """
+    ALTER TABLE detections ADD COLUMN image_cat TEXT;
+    ALTER TABLE detections ADD COLUMN img_cat_url TEXT;
+    """,
 ]
 
 

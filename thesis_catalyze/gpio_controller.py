@@ -57,7 +57,12 @@ def _get_supabase():
     try:
         from supabase import create_client
         url = os.environ.get("SUPABASE_URL", "")
-        key = os.environ.get("SUPABASE_KEY", "")
+        # Prefer service key for server-side operations to avoid RLS rejections
+        key = (
+            os.environ.get("SUPABASE_SERVICE_KEY")
+            or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+            or os.environ.get("SUPABASE_KEY", "")
+        )
         if url and key:
             return create_client(url, key)
     except Exception as exc:
