@@ -23,6 +23,7 @@ function todayManila(): string {
 }
 
 type Row = Pick<Detection, 'id' | 'timestamp' | 'kind' | 'severity' | 'remark'>
+type RowWithImage = Row & { img_overlay_url?: string }
 type ConsistencyFilter = 'All' | 'Firm' | 'Soft' | 'Watery'
 
 const dbKind: Record<ConsistencyFilter, string | null> = {
@@ -35,7 +36,7 @@ const dbKind: Record<ConsistencyFilter, string | null> = {
 export default function ActivityPage() {
   const [selectedDate, setSelectedDate] = useState<string>(todayManila())
   const [filter, setFilter] = useState<ConsistencyFilter>('All')
-  const [items, setItems] = useState<Row[]>([])
+  const [items, setItems] = useState<RowWithImage[]>([])
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useState(true)
@@ -50,7 +51,7 @@ export default function ActivityPage() {
     all: boolean = false,
   ) => {
     setLoading(true)
-    let q = supabase.from('detections').select('id, timestamp, kind, severity, remark')
+    let q = supabase.from('detections').select('id, timestamp, kind, severity, remark, img_overlay_url')
       .order('timestamp', { ascending: false })
       .range(off, off + PAGE_SIZE - 1)
 
@@ -65,7 +66,7 @@ export default function ActivityPage() {
     if (kind) q = q.eq('kind', kind)
 
     const { data } = await q
-    const rows = (data ?? []) as Row[]
+    const rows = (data ?? []) as RowWithImage[]
     setItems(prev => replace ? rows : [...prev, ...rows])
     setHasMore(rows.length === PAGE_SIZE)
     setLoading(false)
@@ -185,27 +186,40 @@ export default function ActivityPage() {
           </div>
         )}
         {items.map(item => (
-          <Link
-            key={item.id}
-            href={`/activity/${item.id}`}
-            className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors"
-          >
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-gray-400 mb-1">{formatTime(item.timestamp)}</p>
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <ConsistencyBadge kind={item.kind} />
-                {item.severity && item.severity !== 'normal' && (
-                  <SeverityBadge severity={item.severity as Detection['severity']} />
+          <div key={item.id} className="flex flex-col divide-y divide-gray-50">
+            <Link
+              href={`/activity/${item.id}`}
+              className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-gray-400 mb-1">{formatTime(item.timestamp)}</p>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <ConsistencyBadge kind={item.kind} />
+                  {item.severity && item.severity !== 'normal' && (
+                    <SeverityBadge severity={item.severity as Detection['severity']} />
+                  )}
+                </div>
+                {item.remark && (
+                  <p className="text-xs text-gray-500 mt-1 truncate">{item.remark}</p>
                 )}
               </div>
-              {item.remark && (
-                <p className="text-xs text-gray-500 mt-1 truncate">{item.remark}</p>
-              )}
-            </div>
-            <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-gray-300 flex-shrink-0">
-              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-            </svg>
-          </Link>
+              <svg viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-gray-300 flex-shrink-0">
+                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+              </svg>
+            </Link>
+
+            {/* Overlay image at bottom */}
+            {item.img_overlay_url && (
+              <div className="p-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={item.img_overlay_url}
+                  alt="Color analysis overlay"
+                  className="w-full rounded-lg border border-gray-100 bg-gray-50"
+                />
+              </div>
+            )}
+          </div>
         ))}
 
         {loading && (
