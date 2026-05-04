@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase-server'
-import { displayKind } from '@/lib/supabase'
+import { displayKind, type Detection } from '@/lib/supabase'
 import { ConsistencyBadge } from '@/components/ConsistencyBadge'
 import { SeverityBadge } from '@/components/SeverityBadge'
 import { ColorBar } from '@/components/ColorBar'
@@ -16,7 +16,7 @@ export default async function DetectionDetailPage({ params }: { params: { id: st
     .from('detections')
     .select('id, local_id, timestamp, kind, bbox_json, red_pct, yellow_pct, green_pct, brown_pct, remark, severity, model_version, image_cat, image_poop, image_full, image_crop, image_overlay, created_at')
     .eq('id', id)
-    .single()
+    .single() as { data: Detection | null }
 
   if (!d) notFound()
 
@@ -35,7 +35,7 @@ export default async function DetectionDetailPage({ params }: { params: { id: st
         <div className="space-y-1">
           <p className="text-xs text-gray-500 font-medium text-center">Cat (entering)</p>
           <DetectionImage
-            src={(d as Record<string, unknown>).image_cat as string | null ?? null}
+            src={d.image_cat ?? null}
             alt="Cat entering litterbox"
             className="aspect-square w-full"
             emptyLabel="No cat photo"
@@ -44,7 +44,7 @@ export default async function DetectionDetailPage({ params }: { params: { id: st
         <div className="space-y-1">
           <p className="text-xs text-gray-500 font-medium text-center">Poop (after exit)</p>
           <DetectionImage
-            src={(d as Record<string, unknown>).image_poop as string | null ?? d.image_crop ?? null}
+            src={d.image_poop ?? d.image_crop ?? null}
             alt="Poop after cat exit"
             className="aspect-square w-full"
             emptyLabel="No poop photo"
@@ -88,7 +88,7 @@ export default async function DetectionDetailPage({ params }: { params: { id: st
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 text-center">Color analysis overlay</h2>
           <DetectionImage
-            src={d.image_overlay as string}
+            src={d.image_overlay}
             alt="Color analysis overlay"
             className="w-full rounded-lg"
             emptyLabel="No overlay"
