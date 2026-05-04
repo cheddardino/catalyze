@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from dotenv import load_dotenv
+import requests
 from supabase import create_client, Client
 
 import db
@@ -24,6 +25,7 @@ load_dotenv()
 SYNC_INTERVAL_S = 30
 BATCH_SIZE = 20
 STORAGE_BUCKET = "captures"
+ALERT_SEVERITIES = {"warning", "critical"}
 
 _client: Optional[Client] = None
 _client_lock = threading.Lock()
@@ -49,6 +51,57 @@ def _get_client() -> Optional[Client]:
         except Exception as e:
             print(f"[sync] failed to init Supabase client: {e}", flush=True)
         return _client
+
+
+def _get_function_url() -> Optional[str]:
+    url = os.environ.get("SUPABASE_URL")
+    if not url:
+        return None
+    return f"{url.rstrip('/')}/functions/v1/notify-detection"
+
+
+def _get_function_headers() -> Optional[dict[str, str]]:
+    key = (
+        os.environ.get("SUPABASE_SERVICE_KEY")
+        or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        or os.environ.get("SUPABASE_KEY")
+    )
+    if not key:
+        return None
+    return {
+        "Authorization": f"Bearer {key}",
+        "apikey": key,
+        "Content-Type": "application/json",
+    }
+
+
+def _notify_warning_detection(row: dict, supabase_row: Optional[dict]) -> None:
+    severity = row.get("severity")
+    if severity not in ALERT_SEVERITIES:
+        return
+
+    function_url = _get_function_url()
+    headers = _get_function_headers()
+    if not function_url or not headers:
+        print("[sync] alert email skipped: Supabase function config missing", flush=True)
+        return
+
+    record = {
+        "id": (supabase_row or {}).get("id") or row.get("supabase_id") or row.get("local_id"),
+        "timestamp": row.get("timestamp"),
+        "kind": row.get("kind"),
+        "severity": severity,
+        "remark": row.get("remark"),
+    }
+
+    try:
+        res = requests.post(function_url, headers=headers, json={"record": record}, timeout=15)
+        if res.ok:
+            print(f"[sync] alert email sent for row {row.get('id')} severity={severity}", flush=True)
+        else:
+            print(f"[sync] alert email failed for row {row.get('id')}: {res.status_code} {res.text}", flush=True)
+    except Exception as e:
+        print(f"[sync] alert email error for row {row.get('id')}: {e}", flush=True)
 
 
 def _upload_image(client: Client, local_path: str, row_id: int, suffix: str) -> Optional[str]:
@@ -112,6 +165,7 @@ def _sync_batch(client: Client, captures_dir: Path) -> int:
             resp = client.table("detections").insert(payload).execute()
             supabase_id = resp.data[0]["id"] if resp.data else None
             db.mark_synced(rid, supabase_id, full_url, crop_url, over_url, cat_url)
+            _notify_warning_detection(row, resp.data[0] if resp.data else None)
             synced += 1
         except Exception as e:
             print(f"[sync] row {rid} failed: {e}", flush=True)

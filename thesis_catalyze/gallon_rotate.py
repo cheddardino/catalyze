@@ -119,6 +119,51 @@ def rotate(direction: int, steps: int = None, duration: float = None, delay: flo
             cleanup_gpio(simulate=simulate)
 
 
+def rotate_sequence(legs, delay: float = STEP_DELAY, simulate=False):
+    """Run multiple rotation legs in sequence without stopping the motor between them.
+    
+    legs: list of (direction, duration_or_steps, pause_after_sec)
+          - direction: 1=CW, 0=CCW
+          - duration_or_steps: float (seconds) or int (steps)
+          - pause_after_sec: float, pause before next leg (0 means no pause)
+    
+    Example: rotate_sequence([(0, 9.0, 0), (0, 2.0, 0.0), (1, 10.0, 0), (0, 1.0, 0)])
+    """
+    _ensure_gpio_ready(simulate=simulate)
+    
+    with _GPIO_LOCK:
+        try:
+            for i, leg in enumerate(legs):
+                direction, duration_or_steps, pause_after = leg
+                if isinstance(duration_or_steps, float):
+                    steps = max(1, int(duration_or_steps / (delay * 2)))
+                else:
+                    steps = int(duration_or_steps)
+                
+                dir_str = 'CW' if direction else 'CCW'
+                print(f"[leg {i+1}] {dir_str}, steps={steps}, delay={delay}", flush=True)
+                
+                if simulate or not IS_RPI:
+                    for j in range(steps):
+                        if j % 500 == 0:
+                            print(f"[SIM] pulse {j+1}/{steps}")
+                else:
+                    GPIO.output(DIR_PIN, GPIO.HIGH if direction else GPIO.LOW)
+                    time.sleep(0.01)  # direction settle
+                    for _ in range(steps):
+                        GPIO.output(PUL_PIN, GPIO.HIGH)
+                        time.sleep(delay)
+                        GPIO.output(PUL_PIN, GPIO.LOW)
+                        time.sleep(delay)
+                
+                # Pause between legs if specified
+                if pause_after > 0:
+                    print(f"[pause] {pause_after}s", flush=True)
+                    time.sleep(pause_after)
+        finally:
+            cleanup_gpio(simulate=simulate)
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description='Rotate the gallon stepper on Raspberry Pi')
     p.add_argument('action', choices=['cw', 'ccw'], help='Direction')

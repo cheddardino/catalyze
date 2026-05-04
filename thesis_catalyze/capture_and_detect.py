@@ -4,10 +4,11 @@ import json
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
+import numpy as np
 from picamera2 import Picamera2
 from ultralytics import YOLO
 
@@ -40,12 +41,12 @@ POLL_INTERVAL          = 4     # seconds between inference runs
 POST_CLEAN_COOLDOWN    = 30
 FALLBACK_POOP_INTERVAL = 120   # fallback poop scan when no cat trigger
 CAT_STAY_CAPTURE_S     = 1.5   # capture cat image after this much continuous presence
-FULL_CYCLE_SECONDS    = 9.0
+FULL_CYCLE_CCW1_S     = 8.0
 FULL_CYCLE_PAUSE_S    = 2.0
+FULL_CYCLE_CW_S       = 9.0
 FULL_CYCLE_DELAY      = gallon_rotate.STEP_DELAY * 3.0
 # Small adjustments for capture-triggered full cycle
-FULL_CYCLE_CW_EXTRA_S = 1.0   # add 1s to the CW leg when triggered from capture
-FULL_CYCLE_CCW2_S     = 1.0   # final short CCW leg (1s)
+FULL_CYCLE_CCW2_S     = 1.75  # final short CCW leg
 
 # Motor cleaning cycle defaults — delegated to motor.py
 MOTOR_DIRECTION = motor.CLEAN_DIRECTION
@@ -74,6 +75,15 @@ def draw_overlay(frame, state, detections, cooldown_remaining=None):
     cv2.putText(disp, text, (10, 28),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, STATE_COLOR.get(state, (255, 255, 255)), 2, cv2.LINE_AA)
     return disp
+
+
+def _preview_tint(frame):
+    """Apply a very small green-leaning preview correction."""
+    preview = frame.astype(np.float32)
+    preview[:, :, 0] *= 0.97
+    preview[:, :, 1] *= 1.02
+    preview[:, :, 2] *= 0.97
+    return np.clip(preview, 0, 255).astype(np.uint8)
 
 
 def _tightest_bbox(detections):
@@ -167,34 +177,17 @@ def save_detection(frame, timestamp, detections, image_cat=None):
 
 def trigger_motor(dry_run: bool):
     """Run the dashboard-style full cleaning cycle in a background thread."""
-    # New pattern for capture-triggered clean:
-    # CCW (FULL_CYCLE_SECONDS) -> pause (FULL_CYCLE_PAUSE_S) ->
-    # CW (FULL_CYCLE_SECONDS + FULL_CYCLE_CW_EXTRA_S) -> CCW2 (SHORT)
+    # New pattern for capture-triggered clean (runs smoothly without stopping motor):
+    # CCW (8s) -> pause (2s) -> CW (9s) -> CCW (1s)
+    # Total: 20 seconds
     def _run():
         try:
-            # First CCW (original duration)
-            gallon_rotate.rotate(
-                direction=0,
-                duration=FULL_CYCLE_SECONDS,
-                delay=FULL_CYCLE_DELAY,
-                simulate=dry_run,
-            )
-            # Pause
-            time.sleep(FULL_CYCLE_PAUSE_S)
-            # CW leg (add 1s)
-            gallon_rotate.rotate(
-                direction=1,
-                duration=FULL_CYCLE_SECONDS + FULL_CYCLE_CW_EXTRA_S,
-                delay=FULL_CYCLE_DELAY,
-                simulate=dry_run,
-            )
-            # Short CCW2 final leg (1s)
-            gallon_rotate.rotate(
-                direction=0,
-                duration=FULL_CYCLE_CCW2_S,
-                delay=FULL_CYCLE_DELAY,
-                simulate=dry_run,
-            )
+            legs = [
+                (0, FULL_CYCLE_CCW1_S, FULL_CYCLE_PAUSE_S),  # CCW 8s, then pause 2s
+                (1, FULL_CYCLE_CW_S, 0),  # CW 9s
+                (0, FULL_CYCLE_CCW2_S, 0),  # CCW 1s
+            ]
+            gallon_rotate.rotate_sequence(legs, delay=FULL_CYCLE_DELAY, simulate=dry_run)
             print(f"[motor] full cleaning cycle done (simulate={dry_run})", flush=True)
         except Exception as exc:
             print(f"[motor] full cleaning cycle FAILED: {exc}", flush=True)
@@ -222,7 +215,7 @@ def inference_loop(cat_model, poop_model, shared, lock, stop_event, dry_run):
         if frame is None:
             continue
 
-        timestamp = datetime.now()
+        timestamp = datetime.now(timezone.utc)
         t = timestamp.strftime("%H:%M:%S")
 
         if state in ("MONITORING", "OCCUPIED"):
@@ -407,7 +400,13 @@ def main():
         )
         picam2.configure(config)
         picam2.start()
-        picam2.set_controls({"FrameDurationLimits": (100000, 100000)})  # 10 fps
+        # Set frame duration (10 fps) and enable camera auto white balance to
+        # improve color stability for stool analysis. Keep change limited
+        # to camera controls only to avoid touching other detection logic.
+        picam2.set_controls({
+            "FrameDurationLimits": (100000, 100000),  # 10 fps
+            "AwbEnable": True,
+        })
         time.sleep(2)
     except Exception as exc:
         print(
@@ -440,7 +439,7 @@ def main():
     def frame_provider():
         with lock:
             f = shared["frame"]
-            return f.copy() if f is not None else None
+            return _preview_tint(f) if f is not None else None
 
     push_thread, push_stop = live_frame_pusher.start(frame_provider)
 
@@ -473,9 +472,10 @@ def main():
     try:
         while True:
             frame = picam2.capture_array()
+            preview_frame = _preview_tint(frame)
 
             with lock:
-                shared["frame"] = frame.copy()
+                shared["frame"] = preview_frame.copy()
                 state = shared["state"]
                 detections = list(shared["detections"])
                 clean_since = shared["clean_since"]
@@ -486,7 +486,7 @@ def main():
             )
 
             cv2.imshow("Catalyze — Litter Monitor",
-                       draw_overlay(frame, state, detections, cooldown_remaining))
+                       draw_overlay(preview_frame, state, detections, cooldown_remaining))
             if cv2.waitKey(200) & 0xFF in (ord("q"), 27):
                 break
 

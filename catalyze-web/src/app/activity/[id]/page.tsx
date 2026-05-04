@@ -103,6 +103,19 @@ export default async function DetectionDetailPage({ params }: { params: { id: st
           )}
         </dl>
       </div>
+
+      {/* Color analysis overlay */}
+      {(d as Record<string, unknown>).image_overlay && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 text-center">Color Analysis</h2>
+          <DetectionImage
+            src={(d as Record<string, unknown>).image_overlay as string}
+            alt="Color analysis overlay"
+            className="w-full rounded-lg"
+            emptyLabel="No analysis overlay"
+          />
+        </div>
+      )}
     </div>
   )
 }

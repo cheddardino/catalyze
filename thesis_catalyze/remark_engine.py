@@ -3,8 +3,10 @@
 from typing import Dict, Optional, Tuple
 
 # Tunable thresholds (percent of crop pixels)
-RED_CRITICAL   = 10.0
-RED_SAFE_BELOW =  5.0
+# Raise red thresholds to reduce false-positive blood detections
+# (require a larger red fraction before marking as critical).
+RED_CRITICAL   = 25.0
+RED_SAFE_BELOW = 10.0
 GREEN_WARNING  = 15.0
 YELLOW_WARNING = 20.0
 BROWN_NORMAL   = 50.0
