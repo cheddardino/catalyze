@@ -101,7 +101,7 @@ export default async function DashboardPage() {
     }
   }
 
-  const hasUnusual = recent?.some(d => d.red_pct && d.red_pct > 20) ?? false
+  const hasUnusual = recent?.some(d => d.severity && (d.severity === 'warning' || d.severity === 'critical')) ?? false
 
   return (
     <div className="space-y-4">
