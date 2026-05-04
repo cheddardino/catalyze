@@ -2,6 +2,9 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase-server'
 import { ColorWheelChart } from '@/components/ColorWheelChart'
 import { CleanNowButton } from '@/components/CleanNowButton'
+import { ConsistencyBadge } from '@/components/ConsistencyBadge'
+import { SeverityBadge } from '@/components/SeverityBadge'
+import type { Detection } from '@/lib/supabase'
 
 function formatTime(ts: string) {
   return new Date(ts).toLocaleString('en-PH', {
@@ -15,12 +18,6 @@ function formatDateLabel(ts: string) {
   return new Date(ts).toLocaleDateString('en-US', {
     month: 'long', day: 'numeric', year: 'numeric',
   })
-}
-
-const CONSISTENCY_LABELS: Record<string, string> = {
-  Hard:   'Hard',
-  Soft:   'Soft',
-  Watery: 'Watery',
 }
 
 const CONSISTENCY_BAR_COLORS: Record<string, string> = {
@@ -61,39 +58,6 @@ function ConsistencyBars({ counts }: { counts: Record<string, number> }) {
   )
 }
 
-function ColorDots({ colors }: { colors: { brown: number; orange: number; green: number; red: number } }) {
-  const sorted = [
-    { color: '#7B3B00', value: colors.brown },
-    { color: '#EE7B00', value: colors.orange },
-    { color: '#5CB11A', value: colors.green },
-    { color: '#B52E2E', value: colors.red },
-  ].sort((a, b) => b.value - a.value)
-
-  return (
-    <div className="flex items-center gap-1.5 mt-0.5">
-      {sorted.map((d, i) => (
-        <div
-          key={i}
-          className="w-4 h-4 rounded-full border border-white"
-          style={{ backgroundColor: d.color, boxShadow: '0 0 0 0.5px rgba(0,0,0,0.08)' }}
-        />
-      ))}
-    </div>
-  )
-}
-
-function ConsistencyTag({ kind }: { kind: string | null }) {
-  const label = kind ? (CONSISTENCY_LABELS[kind] ?? kind) : 'Unknown'
-  return (
-    <span
-      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold w-fit"
-      style={{ backgroundColor: '#9BF5FF', color: '#404040', letterSpacing: '-0.02em' }}
-    >
-      {label}
-    </span>
-  )
-}
-
 export default async function DashboardPage() {
   const supabase = createClient()
 
@@ -112,7 +76,7 @@ export default async function DashboardPage() {
       .gte('timestamp', todayStr),
     supabase
       .from('detections')
-      .select('id, timestamp, kind, image_cat, red_pct, yellow_pct, green_pct, brown_pct')
+      .select('id, timestamp, kind, severity, image_cat')
       .order('timestamp', { ascending: false })
       .limit(5),
   ])
@@ -266,48 +230,40 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        {recent?.map((item, index) => {
-          const hasWarning = item.red_pct && item.red_pct > 20 || item.severity && (item.severity === 'warning' || item.severity === 'critical')
-          return (
-            <Link
-              key={item.id}
-              href={`/activity/${item.id}`}
-              className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200 hover:scale-[1.01] opacity-0 animate-fadeInUp"
-              style={{
-                backgroundColor: '#FFFFFF',
-                boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
-                animationDelay: `${(index + 4) * 100}ms`,
-              }}
-            >
-              <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0" style={{ backgroundColor: '#F0F0F0' }}>
-                {(item as Record<string, unknown>).image_cat ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={(item as Record<string, unknown>).image_cat as string} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src="/cat-icon-overview.png" alt="" className="w-full h-full object-contain p-1" />
+        {recent?.map((item, index) => (
+          <Link
+            key={item.id}
+            href={`/activity/${item.id}`}
+            className="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-all duration-200 hover:scale-[1.01] opacity-0 animate-fadeInUp"
+            style={{
+              backgroundColor: '#FFFFFF',
+              boxShadow: '0 4px 16px rgba(0,0,0,0.06)',
+              animationDelay: `${(index + 4) * 100}ms`,
+            }}
+          >
+            <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0" style={{ backgroundColor: '#F0F0F0' }}>
+              {item.image_cat ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={item.image_cat as string} alt="" className="w-full h-full object-cover" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src="/cat-icon-overview.png" alt="" className="w-full h-full object-contain p-1" />
+              )}
+            </div>
+
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-400 mb-1" style={{ letterSpacing: '-0.02em' }}>
+                {formatTime(item.timestamp)}
+              </p>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <ConsistencyBadge kind={item.kind} />
+                {item.severity && item.severity !== 'normal' && (
+                  <SeverityBadge severity={item.severity as Detection['severity']} />
                 )}
               </div>
-
-              <div className="flex-1 flex flex-col gap-1">
-                <span className="text-xs font-semibold" style={{ color: '#404040', letterSpacing: '-0.02em' }}>
-                  {formatTime(item.timestamp)}
-                </span>
-                <div className="flex items-center gap-2">
-                  <ConsistencyTag kind={item.kind} />
-                  {hasWarning && (
-                    <span
-                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
-                      style={{ backgroundColor: '#FFE5E5', color: '#B52E2E', letterSpacing: '-0.02em' }}
-                    >
-                      ⚠ WARNING
-                    </span>
-                  )}
-                </div>
-              </div>
-            </Link>
-          )
-        })}
+            </div>
+          </Link>
+        ))}
       </div>
 
       {recent && recent.length > 0 && (
