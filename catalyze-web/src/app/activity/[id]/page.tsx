@@ -14,7 +14,7 @@ export default async function DetectionDetailPage({ params }: { params: { id: st
   const supabase = createClient()
   const { data: d } = await supabase
     .from('detections')
-    .select('*')
+    .select('id, local_id, timestamp, kind, bbox_json, red_pct, yellow_pct, green_pct, brown_pct, remark, severity, model_version, image_cat, image_poop, image_full, image_crop, image_overlay, created_at')
     .eq('id', id)
     .single()
 
