@@ -40,27 +40,26 @@ export default function ActivityPage() {
   const [loading, setLoading] = useState(false)
   const [hasMore, setHasMore] = useState(true)
   const [showPicker, setShowPicker] = useState(false)
+  const [allTime, setAllTime] = useState(false)
 
   const load = useCallback(async (
     date: string,
     f: ConsistencyFilter,
     off: number,
     replace: boolean,
+    all: boolean = false,
   ) => {
     setLoading(true)
-
-    // Build start/end of selected day in UTC for Supabase query
-    // Since data timestamps are stored as UTC, we cover the full Manila calendar day
-    const startUtc = new Date(`${date}T00:00:00+08:00`).toISOString()
-    const endUtc   = new Date(`${date}T23:59:59.999+08:00`).toISOString()
-
-    let q = supabase
-      .from('detections')
-      .select('id, timestamp, kind, severity, remark')
-      .gte('timestamp', startUtc)
-      .lte('timestamp', endUtc)
+    let q = supabase.from('detections').select('id, timestamp, kind, severity, remark')
       .order('timestamp', { ascending: false })
       .range(off, off + PAGE_SIZE - 1)
+
+    // If not showing all-time, filter by selected Manila date (converted to UTC range)
+    if (!all) {
+      const startUtc = new Date(`${date}T00:00:00+08:00`).toISOString()
+      const endUtc   = new Date(`${date}T23:59:59.999+08:00`).toISOString()
+      q = q.gte('timestamp', startUtc).lte('timestamp', endUtc)
+    }
 
     const kind = dbKind[f]
     if (kind) q = q.eq('kind', kind)
@@ -75,13 +74,13 @@ export default function ActivityPage() {
   useEffect(() => {
     setOffset(0)
     setHasMore(true)
-    load(selectedDate, filter, 0, true)
-  }, [selectedDate, filter, load])
+    load(selectedDate, filter, 0, true, allTime)
+  }, [selectedDate, filter, load, allTime])
 
   const loadMore = () => {
     const next = offset + PAGE_SIZE
     setOffset(next)
-    load(selectedDate, filter, next, false)
+    load(selectedDate, filter, next, false, allTime)
   }
 
   function handleDateChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -141,8 +140,24 @@ export default function ActivityPage() {
         )}
       </div>
 
-      {/* Consistency filter pills */}
-      <div className="flex gap-2 flex-wrap justify-center">
+      {/* Consistency filter pills (+ All-time toggle) */}
+      <div className="flex gap-2 flex-wrap justify-center items-center">
+        <button
+          onClick={() => {
+            // toggle all-time view
+            setAllTime(v => !v)
+            setOffset(0)
+            setHasMore(true)
+            setItems([])
+          }}
+          className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors mr-1 ${
+            allTime ? 'bg-brand-500 text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-brand-300'
+          }`}
+        >
+          All-time
+        </button>
+
+        <div className="flex items-center gap-2">
         {filters.map(f => (
           <button
             key={f}
@@ -156,6 +171,7 @@ export default function ActivityPage() {
             {f}
           </button>
         ))}
+        </div>
       </div>
 
       {/* List */}
