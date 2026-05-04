@@ -83,6 +83,20 @@ export default async function DetectionDetailPage({ params }: { params: { id: st
         )
       })()}
 
+      {/* Color analysis overlay */}
+      {d.image_overlay && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 text-center">Color analysis overlay</h2>
+          <DetectionImage
+            src={d.image_overlay as string}
+            alt="Color analysis overlay"
+            className="w-full rounded-lg"
+            emptyLabel="No overlay"
+          />
+          <p className="text-xs text-gray-500 text-center">Detection #{d.id}</p>
+        </div>
+      )}
+
       {/* Info */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-2 text-center">Info</h2>
@@ -103,23 +117,6 @@ export default async function DetectionDetailPage({ params }: { params: { id: st
           )}
         </dl>
       </div>
-
-      {/* Color analysis overlay */}
-      {(() => {
-        const overlay = (d as Record<string, unknown>).image_overlay
-        if (!overlay) return null
-        return (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-400 text-center">Color Analysis</h2>
-            <DetectionImage
-              src={overlay as string}
-              alt="Color analysis overlay"
-              className="w-full rounded-lg"
-              emptyLabel="No analysis overlay"
-            />
-          </div>
-        )
-      })()}
     </div>
   )
 }
